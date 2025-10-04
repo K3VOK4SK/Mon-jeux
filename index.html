@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Quartier RP Mobile</title>
+<style>
+body { margin:0; overflow:hidden; font-family: Arial; background:#a3d9ff; }
+#gameCanvas { display:block; margin:0 auto; background:#8cd1a3; border:2px solid black; }
+#hud { position:absolute; top:10px; left:10px; color:black; font-weight:bold; font-size:16px; }
+#inventoryBtn { position:absolute; top:40px; left:10px; width:120px; height:30px; background:#555; color:white; border:none; border-radius:5px; font-weight:bold; }
+#inventoryPanel { position:absolute; top:80px; left:10px; width:200px; height:200px; background:rgba(255,255,255,0.9); border:2px solid black; display:none; padding:5px; overflow:auto; }
+#interactionMenu { position:absolute; bottom:50px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:2px solid black; padding:10px; display:none; }
+#interactionMenu button { display:block; margin:5px; width:150px; }
+#joystickBase { position:absolute; bottom:50px; left:50px; width:100px; height:100px; border-radius:50%; background:rgba(0,0,0,0.2); display:none; }
+#joystickKnob { position:absolute; bottom:90px; left:90px; width:50px; height:50px; border-radius:50%; background:rgba(0,0,0,0.5); display:none; }
+</style>
+</head>
+<body>
+
+<div id="hud">Credits: 100 | Santé: 100% | Faim: 100% | Soif: 100%</div>
+<button id="inventoryBtn">Inventaire</button>
+<div id="inventoryPanel"></div>
+<div id="interactionMenu"></div>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<div id="joystickBase"></div>
+<div id="joystickKnob"></div>
+
+<script>
+// ===== Variables =====
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let credits = 100, health = 100, hunger = 100, thirst = 100;
+let inventory = [];
+
+let player = { x:400, y:300, w:40, h:60, speed:4 };
+
+// ===== Sprites locales =====
+const sprites = {};
+function loadSprite(name, src){ const img=new Image(); img.src=src; sprites[name]=img; }
+
+loadSprite('player','images/player.png');
+loadSprite('magasin','images/magasin.png');
+loadSprite('poste','images/poste.png');
+loadSprite('parc','images/parc.png');
+loadSprite('ruelle','images/ruelle.png');
+loadSprite('sante','images/sante.png');
+loadSprite('npc','images/npc.png');
+
+// ===== Lieux =====
+let places = [
+  {x:600, y:200, w:80, h:80, name:'Magasin', type:'building', sprite:'magasin'},
+  {x:200, y:200, w:80, h:80, name:'Poste', type:'building', sprite:'poste'},
+  {x:400, y:100, w:120, h:80, name:'Parc', type:'park', sprite:'parc'},
+  {x:700, y:400, w:80, h:80, name:'RuelleIllegal', type:'illegal', sprite:'ruelle'},
+  {x:100, y:400, w:80, h:80, name:'UHD Santé', type:'health', sprite:'sante'}
+];
+
+let npcs = [
+  {x:420, y:130, w:40, h:60, sprite:'npc'},
+  {x:450, y:150, w:40, h:60, sprite:'npc'}
+];
+
+// ===== HUD et inventaire =====
+const hud = document.getElementById('hud');
+const inventoryBtn = document.getElementById('inventoryBtn');
+const inventoryPanel = document.getElementById('inventoryPanel');
+inventoryBtn.addEventListener('click', ()=>{
+  inventoryPanel.style.display = inventoryPanel.style.display==='block'?'none':'block';
+});
+function updateHUD(){
+  hud.innerText = `Credits: ${credits} | Santé: ${Math.round(health)}% | Faim: ${Math.round(hunger)}% | Soif: ${Math.round(thirst)}%`;
+  inventoryPanel.innerHTML = inventory.length ? inventory.join('<br>') : 'Vide';
+}
+
+// ===== Interactions =====
+const interactionMenu = document.getElementById('interactionMenu');
+function showInteraction(options){
+  interactionMenu.innerHTML = '';
+  options.forEach(opt=>{
+    const btn = document.createElement('button');
+    btn.innerText = opt.text;
+    btn.onclick = ()=>{ opt.action(); hideInteraction(); };
+    interactionMenu.appendChild(btn);
+  });
+  interactionMenu.style.display='block';
+}
+function hideInteraction(){ interactionMenu.style.display='none'; }
+
+// ===== Déplacement =====
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+const joystickBase = document.getElementById('joystickBase');
+const joystickKnob = document.getElementById('joystickKnob');
+if(isMobile){ joystickBase.style.display='block'; joystickKnob.style.display='block'; }
+
+const keys = {};
+document.addEventListener('keydown', e=>{ keys[e.key]=true; });
+document.addEventListener('keyup', e=>{ keys[e.key]=false; });
+
+function movePlayer(dx,dy){
+  player.x += dx;
+  player.y += dy;
+  if(player.x<0) player.x=0;
+  if(player.y<0) player.y=0;
+  if(player.x+player.w>canvas.width) player.x=canvas.width-player.w;
+  if(player.y+player.h>canvas.height) player.y=canvas.height-player.h;
+}
+
+// ===== Dessin =====
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  places.forEach(p=>{ if(sprites[p.sprite].complete) ctx.drawImage(sprites[p.sprite],p.x,p.y,p.w,p.h); });
+  npcs.forEach(npc=>{ if(sprites[npc.sprite].complete) ctx.drawImage(sprites[npc.sprite],npc.x,npc.y,npc.w,npc.h); });
+  if(sprites['player'].complete) ctx.drawImage(sprites['player'],player.x,player.y,player.w,player.h);
+}
+
+// ===== Interactions automatiques =====
+function checkInteractions(){
+  places.forEach(p=>{
+    const dx = (player.x+player.w/2)-(p.x+p.w/2);
+    const dy = (player.y+player.h/2)-(p.y+p.h/2);
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist<60){
+      if(p.type==='building'){
+        if(p.name==='Magasin') showInteraction([
+          {text:'Acheter Nourriture 20', action:()=>{if(credits>=20){credits-=20;inventory.push('Nourriture'); hunger=Math.min(hunger+30,100); updateHUD();} else alert('Pas assez de crédits !');}},
+          {text:'Acheter Boisson 10', action:()=>{if(credits>=10){credits-=10;inventory.push('Boisson'); thirst=Math.min(thirst+30,100); updateHUD();} else alert('Pas assez de crédits !');}},
+          {text:'Acheter Vêtement 50', action:()=>{if(credits>=50){credits-=50;inventory.push('Vêtement'); updateHUD();} else alert('Pas assez de crédits !');}}
+        ]);
+        else if(p.name==='Poste') showInteraction([{text:'Envoyer colis / discuter', action:()=>{alert('Tu discutes avec le postier.');}}]);
+        else if(p.name==='RuelleIllegal') showInteraction([{text:'Mission risquée', action:()=>{credits+=100; hunger-=10; thirst-=10; updateHUD(); alert('Mission réussie +100 crédits');}}]);
+      } else if(p.type==='park'){
+        showInteraction([
+          {text:'Parler aux PNJ', action:()=>{alert('Tu discutes avec des habitants.');}},
+          {text:'S’asseoir sur un banc', action:()=>{health=Math.min(health+10,100); updateHUD();}}
+        ]);
+      } else if(p.type==='health'){
+        showInteraction([{text:'Soigner Santé 30 crédits', action:()=>{if(credits>=30){credits-=30; health=100; updateHUD();}}}]);
+      }
+    }
+  });
+}
+
+// ===== Faim / Soif =====
+setInterval(()=>{
+  hunger = Math.max(hunger - 2, 0);
+  thirst = Math.max(thirst - 2, 0);
+  if(hunger === 0 || thirst === 0){
+    health = Math.max(health - 1, 0);
+  }
+  updateHUD();
+},5000);
+
+// ===== Joystick Mobile =====
+let joystickActive=false,startX=0,startY=0;
+joystickBase.addEventListener('touchstart',e=>{e.preventDefault(); joystickActive=true; const t=e.touches[0]; startX=t.clientX; startY=t.clientY; moveKnob(startX,startY);});
+joystickBase.addEventListener('touchmove',e=>{if(!joystickActive) return; const t=e.touches[0]; const dx=t.clientX-startX; const dy=t.clientY-startY; const maxDist=50; const dist=Math.min(Math.sqrt(dx*dx+dy*dy),maxDist); const angle=Math.atan2(dy,dx); movePlayer(Math.cos(angle)*dist/5,Math.sin(angle)*dist/5); moveKnob(startX+Math.cos(angle)*dist,startY+Math.sin(angle)*dist);});
+joystickBase.addEventListener('touchend',e=>{joystickActive=false; moveKnob(startX,startY);});
+function moveKnob(x,y){ joystickKnob.style.left=(x-25)+'px'; joystickKnob.style.bottom=(window.innerHeight-y-25)+'px';}
+
+// ===== Game loop =====
+function gameLoop(){
+  if(!isMobile){
+    if(keys['ArrowUp']) movePlayer(0,-player.speed);
+    if(keys['ArrowDown']) movePlayer(0,player.speed);
+    if(keys['ArrowLeft']) movePlayer(-player.speed,0);
+    if(keys['ArrowRight']) movePlayer(player.speed,0);
+  }
+  draw();
+  checkInteractions();
+  requestAnimationFrame(gameLoop);
+}
+gameLoop();
+updateHUD();
+</script>
+</body>
+</html>
